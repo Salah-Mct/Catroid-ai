@@ -11,7 +11,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Regression test for the historical "only the last-trained face is remembered" bug.
+ * Checks that every trained person stays recognisable while further people are
+ * trained, and that an untrained person is not given a trained name.
  *
  * The order is deliberately interleaved, and must not be rewritten as
  * "train everybody, then test everybody", because the interleaving is the
@@ -26,12 +27,13 @@ import org.junit.runner.RunWith
  *   recognise A        -> A        (the first-trained person is still recognised)
  *   recognise no_face  -> null
  *
- * The sequence runs once through the stage's session path and once through
- * recognize(), so a disagreement between the two paths is one red test rather
- * than a silent pass. See [FaceRecognitionHarness] for what each path covers.
+ * The sequence runs once through FaceDetector's recognition loop ([FrameBurst],
+ * the camera replaced by the fixture photo) and once through recognize(), so a
+ * disagreement between the two paths is one red test rather than a silent pass.
+ * See [FaceRecognitionHarness] for what each path covers.
  */
 @RunWith(AndroidJUnit4::class)
-class RecognizerTrainingOrderRegressionTest {
+class RecognizerTrainingOrderTest {
 
     private val harness = FaceRecognitionHarness()
 

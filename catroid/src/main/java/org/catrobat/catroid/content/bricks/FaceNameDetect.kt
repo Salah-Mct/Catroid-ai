@@ -21,11 +21,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.catrobat.catroid.content.bricks;
+package org.catrobat.catroid.content.bricks
 
-import org.catrobat.catroid.R;
-import org.catrobat.catroid.content.Sprite;
-import org.catrobat.catroid.content.actions.ScriptSequenceAction;
+import org.catrobat.catroid.R
+import org.catrobat.catroid.content.Sprite
+import org.catrobat.catroid.content.actions.ScriptSequenceAction
+import org.catrobat.catroid.content.bricks.Brick.FACE_NAME_DETECTION
+import org.catrobat.catroid.content.bricks.Brick.ResourcesSet
 
 /**
  * Built exactly like FaceNameTrain, because that brick already runs in the right
@@ -35,27 +37,20 @@ import org.catrobat.catroid.content.actions.ScriptSequenceAction;
  * what makes Catroid ask for the camera permission before the stage starts,
  * through the mapping already present in BrickResourcesToRuntimePermissions.
  */
-public class FaceNameDetect extends BrickBaseType {
+class FaceNameDetect : BrickBaseType() {
 
-	private static final long serialVersionUID = 1L;
+    override fun getViewResource(): Int = R.layout.brick_face_name
 
-	public FaceNameDetect() {
-		// No additional initialization is required for this brick.
-	}
+    override fun addRequiredResources(requiredResourcesSet: ResourcesSet) {
+        requiredResourcesSet.add(FACE_NAME_DETECTION)
+        super.addRequiredResources(requiredResourcesSet)
+    }
 
-	@Override
-	public int getViewResource() {
-		return R.layout.brick_face_name;
-	}
+    override fun addActionToSequence(sprite: Sprite, sequence: ScriptSequenceAction) {
+        sequence.addAction(sprite.actionFactory.faceNameDetectAction(sprite, sequence))
+    }
 
-	@Override
-	public void addRequiredResources(final ResourcesSet requiredResourcesSet) {
-		requiredResourcesSet.add(FACE_NAME_DETECTION);
-		super.addRequiredResources(requiredResourcesSet);
-	}
-
-	@Override
-	public void addActionToSequence(Sprite sprite, ScriptSequenceAction sequence) {
-		sequence.addAction(sprite.getActionFactory().faceNameDetectAction(sprite, sequence));
-	}
+    companion object {
+        private const val serialVersionUID = 1L
+    }
 }

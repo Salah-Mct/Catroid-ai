@@ -15,21 +15,17 @@ import java.io.File
 
 /**
  * Drives the recogniser the way the product does, on the real face fixtures
- * (faces.zip, unpacked to assets/faces/).
+ * (faces.zip, unpacked to the generated androidTest assets under faces/).
  *
  *  - Training goes through [Recognizer.extractEmbeddings] with file URIs,
  *    followed by addPerson/addEmbeddings, as FaceNameTrainAction does after the
  *    photo picker returns.
- *  - [StagePath] recognises through the session API (newSession -> addFrame ->
- *    peekSession early exit -> finishSession) with the frame count and early
- *    exit rule of the capture loop in FaceDetector. That path has its own
- *    face-size and quality filters, frame averaging, decide() and the stricter
- *    single-frame threshold.
+ *  - [StagePath] recognises through [FrameBurst], the production recognition
+ *    loop that FaceDetector runs for every camera capture (clipped-frame check,
+ *    addFrame, peekSession early exit, finishSession with the stricter
+ *    single-frame threshold). Only the camera is replaced: the fixture photo is
+ *    offered as every frame of the burst.
  *  - [RecognizePath] uses [Recognizer.recognize] (FaceDatabase.match()).
- *
- * Only Recognizer API that also exists at Catrobat/Catroid#5237 (5b82fd56) is
- * used, so the tests built on this harness can be copied unchanged into that
- * tree for a red run against the old recogniser.
  */
 class FaceRecognitionHarness {
 
@@ -125,29 +121,25 @@ class FaceRecognitionHarness {
     }
 
     /**
-     * The capture loop from FaceDetector.Session, without the camera. The same
-     * decoded still is fed as every frame of the burst; with identical frames the
-     * session average equals the single-frame scores, so the thresholds are
-     * applied as they would be to a steady face.
+     * FaceDetector's recognition loop without the camera: the production
+     * [FrameBurst], offered the same decoded still as every frame, as a steady
+     * face in front of the camera would be.
      */
     inner class StagePath : RecognitionPath() {
         override val label = "stage session path"
 
+        /** Frames the last [recognise] call used; fewer than [FrameBurst.FRAMES] means an early exit. */
+        var lastFramesUsed = 0
+            private set
+
         override fun recognise(bitmap: Bitmap): Recognizer.Result? {
-            if (recognizer.classNames.isEmpty()) {
-                return null
+            // Null when nobody is trained; FaceDetector then ends as Unknown.
+            val burst = recognizer.newBurst() ?: return null
+            while (!burst.addFrame(bitmap, FRONT_CAMERA_MIRROR)) {
+                // FaceDetector captures the next frame here.
             }
-            val session = recognizer.newSession()
-            for (shot in 1..BURST_FRAMES) {
-                recognizer.addFrame(session, bitmap, FRONT_CAMERA_MIRROR)
-                val early = recognizer.peekSession(session)
-                if (early != null &&
-                    early.confidence > FaceDatabase.minSimilarity + EARLY_EXIT_MARGIN
-                ) {
-                    return early
-                }
-            }
-            return recognizer.finishSession(session)
+            lastFramesUsed = burst.framesSeen
+            return burst.result
         }
 
         override fun describe(): String = "Summary: ${recognizer.lastSummary}"
@@ -208,12 +200,6 @@ class FaceRecognitionHarness {
         /** Explicit thresholds. 0.60 is also the recogniser's absolute floor. */
         const val MIN_SIMILARITY = 0.60f
         const val MIN_MARGIN = 0.05f
-
-        /** Must match FaceDetector.BURST_FRAMES. */
-        const val BURST_FRAMES = 3
-
-        /** Must match FaceDetector.EARLY_EXIT_MARGIN. */
-        const val EARLY_EXIT_MARGIN = 0.15f
 
         /** FaceDetector passes isFrontCamera; the brick uses the front camera. */
         const val FRONT_CAMERA_MIRROR = true

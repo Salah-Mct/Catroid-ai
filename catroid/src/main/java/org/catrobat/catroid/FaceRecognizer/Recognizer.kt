@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import org.catrobat.catroid.FaceRecognizer.env.FileUtils
 import org.catrobat.catroid.FaceRecognizer.env.FileUtils.file
 import org.catrobat.catroid.FaceRecognizer.env.FileUtils.init
@@ -545,6 +546,20 @@ class Recognizer private constructor() {
     }
 
     /**
+     * Starts the recognition loop for one capture, see [FrameBurst]. Returns null
+     * when nobody has been trained; the capture then ends as Unknown without
+     * opening the camera.
+     */
+    @Synchronized
+    fun newBurst(): FrameBurst? {
+        database.ensureFresh()
+        if (database.getNames().isEmpty()) {
+            return null
+        }
+        return FrameBurst(this)
+    }
+
+    /**
      * Scores one frame into the session. Returns true if a face was found and used.
      * The frame is not modified and is not recycled.
      */
@@ -708,9 +723,15 @@ class Recognizer private constructor() {
         return true
     }
 
+    /**
+     * Reads the session so far without ending it, so a capture can stop early on
+     * a clear match. Null until at least one frame contained a usable face; from
+     * then on it applies the same rules as [finishSession], including the stricter
+     * threshold for a single frame.
+     */
     @Synchronized
     fun peekSession(session: Session?): Result? {
-        if (session == null || session.framesWithFace == 2) {
+        if (session == null || session.framesWithFace == 0) {
             return null
         }
         return finishSession(session)
@@ -1617,6 +1638,18 @@ class Recognizer private constructor() {
         private const val SINGLE_FRAME_MIN_SIMILARITY = 0.75f
 
         private var instance: Recognizer? = null
+
+        /**
+         * A recogniser with its database but without the face models, for local
+         * tests of the session logic. It cannot detect or embed faces.
+         */
+        @VisibleForTesting
+        internal fun withoutModelsForTest(context: Context): Recognizer {
+            init(context)
+            val r = Recognizer()
+            r.database.load()
+            return r
+        }
 
         /** Prevent two Select presses from leaving concurrent dataset jobs alive.  */
         @Volatile

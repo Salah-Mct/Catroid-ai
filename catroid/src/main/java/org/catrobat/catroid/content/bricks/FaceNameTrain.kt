@@ -21,29 +21,21 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.catrobat.catroid.content.bricks;
+package org.catrobat.catroid.content.bricks
 
-import org.catrobat.catroid.R;
-import org.catrobat.catroid.content.Sprite;
-import org.catrobat.catroid.content.actions.ScriptSequenceAction;
+import org.catrobat.catroid.R
+import org.catrobat.catroid.content.Sprite
+import org.catrobat.catroid.content.actions.ScriptSequenceAction
 
-public class FaceNameTrain extends BrickBaseType {
+class FaceNameTrain : BrickBaseType() {
 
-	private static final long serialVersionUID = 1L;
+    override fun getViewResource(): Int = R.layout.brick_face_name
 
-	public FaceNameTrain() {
-		// This brick has no configurable state; inherited initialization is sufficient.
-	}
+    override fun addActionToSequence(sprite: Sprite, sequence: ScriptSequenceAction) {
+        sequence.addAction(sprite.actionFactory.faceNameTrainAction(sprite, sequence))
+    }
 
-	@Override
-	public int getViewResource() {
-		return R.layout.brick_face_name;
-	}
-
-	@Override
-	public void addActionToSequence(Sprite sprite, ScriptSequenceAction sequence) {
-		sequence.addAction(sprite.getActionFactory().faceNameTrainAction(sprite,sequence));
-	}
+    companion object {
+        private const val serialVersionUID = 1L
+    }
 }
-
-

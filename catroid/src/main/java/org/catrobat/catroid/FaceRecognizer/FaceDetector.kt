@@ -44,9 +44,6 @@ object FaceDetector {
 
     const val UNKNOWN: String = "Unknown"
 
-    /** Frames to score before deciding. More frames, less noise.  */
-    private const val BURST_FRAMES = 3
-
     /** Longest JPEG side. A bigger face crop makes a sharper network input.  */
     private const val TARGET_JPEG_SIDE = 1280
 
@@ -62,13 +59,6 @@ object FaceDetector {
 
     /** Shortest gap between attempts, in case something asks repeatedly.  */
     private const val MIN_INTERVAL_MS: Long = 5000
-
-    /**
-     * Stop the burst early when the first frame is already this far above the
-     * accept threshold. Turns a typical detection from about two seconds into
-     * under one, and still uses all three frames when the match is marginal.
-     */
-    private const val EARLY_EXIT_MARGIN = 0.15f
 
     /** True while a capture is in flight.  */
     // ---------------- The gate ----------------
@@ -356,8 +346,8 @@ object FaceDetector {
 
     // ---------------- One capture ----------------
     private class Session(private val context: Context, private val callback: Callback) {
-        private var recognizer: Recognizer? = null
-        private var scores: Recognizer.Session? = null
+        /** The recognition loop; shared with the tests, see [FrameBurst]. */
+        private var burst: FrameBurst? = null
 
         private var thread: HandlerThread? = null
         private var handler: Handler? = null
@@ -379,18 +369,15 @@ object FaceDetector {
             try {
                 init(context)
 
-                val activeRecognizer =
-                    Recognizer.getInstance(context)
+                val newBurst = Recognizer.getInstance(context).newBurst()
 
-                recognizer = activeRecognizer
-
-                if (activeRecognizer.classNames.isEmpty()) {
+                if (newBurst == null) {
                     Log.w(TAG, "Nobody has been trained yet")
                     end(UNKNOWN, 0f)
                     return
                 }
 
-                scores = activeRecognizer.newSession()
+                burst = newBurst
             } catch (e: Exception) {
                 Log.e(TAG, "Recognizer not available", e)
                 end(UNKNOWN, 0f)
@@ -447,7 +434,7 @@ object FaceDetector {
 
                 imageReader = ImageReader.newInstance(
                     jpeg.getWidth(), jpeg.getHeight(),
-                    ImageFormat.JPEG, BURST_FRAMES + 1
+                    ImageFormat.JPEG, FrameBurst.FRAMES + 1
                 )
                 imageReader!!.setOnImageAvailableListener(onImageAvailable, handler)
 
@@ -538,7 +525,7 @@ object FaceDetector {
             if (ended || captureSession == null || stillBuilder == null) {
                 return
             }
-            if (shotsRequested >= BURST_FRAMES) {
+            if (shotsRequested >= FrameBurst.FRAMES) {
                 decide()
                 return
             }
@@ -587,32 +574,11 @@ object FaceDetector {
                     val options = BitmapFactory.Options()
                     options.inPreferredConfig = Bitmap.Config.ARGB_8888
                     decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                    if (decoded == null) {
-                        next()
-                        return@OnImageAvailableListener
-                    }
+                    upright = decoded?.let { rotateToSensorUpright(it) }
 
-                    upright = rotateToSensorUpright(decoded)
-                    if (isSeverelyOverexposed(upright)) {
-                        Log.i(
-                            TAG, ("Frame " + shotsRequested
-                                + " rejected: highlights are clipped")
-                        )
-                    } else {
-                        recognizer!!.addFrame(scores, upright, this.isFrontCamera)
-                    }
-
-                    val early = recognizer!!.peekSession(scores)
-                    if (early != null
-                        && early.confidence > FaceDatabase.Companion.minSimilarity + EARLY_EXIT_MARGIN
-                    ) {
-                        Log.i(TAG, "Clear match on frame " + shotsRequested + ", stopping early")
-                        end(early.name, early.confidence)
-                        return@OnImageAvailableListener
-                    }
-
-                    if (shotsRequested >= BURST_FRAMES) {
-                        decide()
+                    val activeBurst = burst!!
+                    if (activeBurst.addFrame(upright, this.isFrontCamera)) {
+                        endWith(activeBurst.result)
                     } else {
                         next()
                     }
@@ -636,66 +602,28 @@ object FaceDetector {
             if (ended) {
                 return
             }
-            if (shotsRequested >= BURST_FRAMES) {
+            if (shotsRequested >= FrameBurst.FRAMES) {
                 decide()
             } else {
                 handler!!.postDelayed(Runnable { this.takeShot() }, BETWEEN_SHOTS_DELAY_MS)
             }
         }
 
-        /**
-         * Clipped white pixels contain no recoverable facial texture.  Do not let an
-         * overexposed 0-EV frame lower the session average; the following -1/-2 EV
-         * bracket frames will retain the eyes, nose and skin texture.
-         */
-        fun isSeverelyOverexposed(bitmap: Bitmap?): Boolean {
-            if (bitmap == null || bitmap.isRecycled()) {
-                return true
-            }
-            val left = bitmap.getWidth() / 4
-            val top = bitmap.getHeight() / 4
-            val right = bitmap.getWidth() * 3 / 4
-            val bottom = bitmap.getHeight() * 3 / 4
-            var sampled = 0
-            var clipped = 0
-            var luminanceSum = 0L
-            val step = max(1, min(bitmap.getWidth(), bitmap.getHeight()) / 120)
-            var y = top
-            while (y < bottom) {
-                var x = left
-                while (x < right) {
-                    val p = bitmap.getPixel(x, y)
-                    val r = (p shr 16) and 0xff
-                    val g = (p shr 8) and 0xff
-                    val b = p and 0xff
-                    val luma = (77 * r + 150 * g + 29 * b) shr 8
-                    luminanceSum += luma.toLong()
-                    if (r >= 250 && g >= 250 && b >= 250) {
-                        clipped++
-                    }
-                    sampled++
-                    x += step
-                }
-                y += step
-            }
-            if (sampled == 0) {
-                return false
-            }
-            val clippedRatio = clipped.toFloat() / sampled
-            val meanLuma = luminanceSum.toFloat() / sampled
-            return clippedRatio > 0.45f || meanLuma > 238f
-        }
-
+        /** Decides with the frames that arrived, e.g. when the watchdog fires. */
         fun decide() {
             if (ended) {
                 return
             }
             var result: Recognizer.Result? = null
             try {
-                result = recognizer!!.finishSession(scores)
+                result = burst?.finish()
             } catch (t: Throwable) {
                 Log.e(TAG, "Scoring failed", t)
             }
+            endWith(result)
+        }
+
+        fun endWith(result: Recognizer.Result?) {
             if (result == null) {
                 end(UNKNOWN, 0f)
             } else {
