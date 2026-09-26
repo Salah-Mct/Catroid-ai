@@ -312,7 +312,30 @@ object FaceDetector {
     @VisibleForTesting
     internal fun useCameraCapture() {
         captureStarter = cameraCapture
+        frameSource = null
     }
+
+    /**
+     * Supplies the frames of a capture in place of the camera. The camera
+     * [Session] still runs everything else: the recognition burst, shot
+     * scheduling, the watchdog, the decision and the result. Only Camera2, the
+     * JPEG decode and the rotation to upright are replaced.
+     */
+    interface FrameSource {
+        /** Front-camera frames are also tried mirrored, as the camera path does. */
+        val isFrontCamera: Boolean get() = true
+
+        /**
+         * Returns upright frame [shot] (0-based), or null if it is unusable.
+         * Called on the detector thread; the session recycles the bitmap.
+         */
+        fun frame(shot: Int): Bitmap?
+    }
+
+    /** Null in the app: frames come from the camera. */
+    @VisibleForTesting
+    @Volatile
+    internal var frameSource: FrameSource? = null
 
     @Synchronized
     private fun finish(name: String?, confidence: Float, callback: Callback) {
@@ -348,6 +371,9 @@ object FaceDetector {
     private class Session(private val context: Context, private val callback: Callback) {
         /** The recognition loop; shared with the tests, see [FrameBurst]. */
         private var burst: FrameBurst? = null
+
+        /** Null in the app. Tests supply frames here instead of the camera. */
+        private val frames: FrameSource? = frameSource
 
         private var thread: HandlerThread? = null
         private var handler: Handler? = null
@@ -405,8 +431,10 @@ object FaceDetector {
                 WATCHDOG_MS
             )
 
-            detectorHandler.post {
-                openCamera()
+            if (frames == null) {
+                detectorHandler.post { openCamera() }
+            } else {
+                detectorHandler.post { takeShot() }
             }
         }
         fun openCamera() {
@@ -522,7 +550,8 @@ object FaceDetector {
         }
 
         fun takeShot() {
-            if (ended || captureSession == null || stillBuilder == null) {
+            val source = frames
+            if (ended || (source == null && (captureSession == null || stillBuilder == null))) {
                 return
             }
             if (shotsRequested >= FrameBurst.FRAMES) {
@@ -531,6 +560,10 @@ object FaceDetector {
             }
             val bracketIndex = shotsRequested
             shotsRequested++
+            if (source != null) {
+                deliverFromSource(source, bracketIndex)
+                return
+            }
             try {
                 stillBuilder!!.set<Int?>(
                     CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
@@ -576,12 +609,7 @@ object FaceDetector {
                     decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
                     upright = decoded?.let { rotateToSensorUpright(it) }
 
-                    val activeBurst = burst!!
-                    if (activeBurst.addFrame(upright, this.isFrontCamera)) {
-                        endWith(activeBurst.result)
-                    } else {
-                        next()
-                    }
+                    handleFrame(upright, this.isFrontCamera)
                 } catch (t: Throwable) {
                     Log.e(TAG, "Frame failed", t)
                     next()
@@ -597,6 +625,31 @@ object FaceDetector {
                     }
                 }
             }
+
+        /** Every frame, from the camera or a [FrameSource], goes through here. */
+        fun handleFrame(frame: Bitmap?, mirrorToo: Boolean) {
+            val activeBurst = burst!!
+            if (activeBurst.addFrame(frame, mirrorToo)) {
+                endWith(activeBurst.result)
+            } else {
+                next()
+            }
+        }
+
+        fun deliverFromSource(source: FrameSource, shot: Int) {
+            var frame: Bitmap? = null
+            try {
+                frame = source.frame(shot)
+                handleFrame(frame, source.isFrontCamera)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Frame failed", t)
+                next()
+            } finally {
+                if (frame != null && !frame.isRecycled()) {
+                    frame.recycle()
+                }
+            }
+        }
 
         fun next() {
             if (ended) {

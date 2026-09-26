@@ -161,6 +161,9 @@ class FaceRecognitionHarness {
         }
     }
 
+    /** A freshly decoded fixture photo; the caller owns and recycles it. */
+    fun fixtureBitmap(fileName: String): Bitmap = requiredBitmap(fileName)
+
     private fun requiredBitmap(fileName: String): Bitmap {
         val assetPath = "faces/$fileName"
         val bitmap = try {

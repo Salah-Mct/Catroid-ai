@@ -2,6 +2,7 @@ package org.catrobat.catroid.uiespresso.facerecognizer
 
 import android.Manifest
 import android.content.Context
+import android.graphics.Bitmap
 import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.HandlerThread
@@ -44,9 +45,11 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * and checks what reaches the variable. Everything between the brick and the
  * variable is production code: the action, FaceDetector's permission check,
- * run gate and finish(), SensorHandler and the formula. Two tests use the real
- * camera Session; the others replace only the camera with a fixture photo fed
- * through the stage's recognition loop, so the expected name is known.
+ * run gate and finish(), SensorHandler and the formula, and the capture
+ * Session with its recognition loop. Two tests use the real camera. The other
+ * three replace only the camera (FaceDetector.FrameSource): the real Session
+ * receives a fixture photo as every frame instead of a Camera2 JPEG, so the
+ * expected name is known.
  *
  * Whether the camera was opened is observed with CameraManager's availability
  * callback, which reports every open and close of a camera device.
@@ -125,38 +128,41 @@ class FaceNameDetectStageTest {
     fun trainedPersonInFrontOfTheCameraIsWrittenIntoTheVariable() {
         harness.trainPerson(PERSON_A, "p01")
         harness.trainPerson(PERSON_B, "p02")
-        feedCaptureWith("p02_test.jpg")
+        feedCameraWith("p02_test.jpg")
 
         stageRule.launchActivity(null)
 
         endOfScript.waitUntilEvaluated(FIXTURE_TIMEOUT_MS)
         assertUserVariableEqualsWithTimeout(sa, PERSON_B, 1000)
         assertDetectionFinished(PERSON_B)
+        assertCameraNotOpened()
     }
 
     @Test
     fun untrainedPersonInFrontOfTheCameraIsUnknown() {
         harness.trainPerson(PERSON_A, "p01")
         harness.trainPerson(PERSON_B, "p02")
-        feedCaptureWith("p03_test.jpg")
+        feedCameraWith("p03_test.jpg")
 
         stageRule.launchActivity(null)
 
         endOfScript.waitUntilEvaluated(FIXTURE_TIMEOUT_MS)
         assertUserVariableEqualsWithTimeout(sa, FaceDetector.UNKNOWN, 1000)
         assertDetectionFinished(FaceDetector.UNKNOWN)
+        assertCameraNotOpened()
     }
 
     @Test
     fun frameWithoutAFaceIsUnknown() {
         harness.trainPerson(PERSON_A, "p01")
-        feedCaptureWith("no_face.jpeg")
+        feedCameraWith("no_face.jpeg")
 
         stageRule.launchActivity(null)
 
         endOfScript.waitUntilEvaluated(FIXTURE_TIMEOUT_MS)
         assertUserVariableEqualsWithTimeout(sa, FaceDetector.UNKNOWN, 1000)
         assertDetectionFinished(FaceDetector.UNKNOWN)
+        assertCameraNotOpened()
     }
 
     private fun createProject() {
@@ -179,15 +185,19 @@ class FaceNameDetectStageTest {
         )
     )
 
-    /** Replaces the camera with one fixture photo run through the stage's recognition loop. */
-    private fun feedCaptureWith(fileName: String) {
-        val stage = harness.StagePath()
-        FaceDetector.captureStarter = FaceDetector.CaptureStarter { _, onResult ->
-            Thread({
-                val result = stage.recogniseFile(fileName)
-                onResult.onFinished(result?.name, result?.confidence ?: 0f)
-            }, "fake_face_capture").start()
+    /**
+     * Replaces only the camera: the real capture Session runs (burst, shot
+     * scheduling, watchdog, decision, result) and receives this fixture photo as
+     * every frame instead of a Camera2 JPEG.
+     */
+    private fun feedCameraWith(fileName: String) {
+        FaceDetector.frameSource = object : FaceDetector.FrameSource {
+            override fun frame(shot: Int): Bitmap = harness.fixtureBitmap(fileName)
         }
+    }
+
+    private fun assertCameraNotOpened() {
+        assertEquals("The camera must not be opened when frames are supplied", 0, cameraWatch.opened.get())
     }
 
     private fun assertDetectionFinished(expectedName: String) {
