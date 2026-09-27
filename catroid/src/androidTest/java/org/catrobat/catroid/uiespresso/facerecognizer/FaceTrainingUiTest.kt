@@ -6,9 +6,9 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onIdle
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.espresso.IdlingPolicies
 import androidx.test.espresso.IdlingRegistry
 import androidx.test.espresso.IdlingResource
@@ -26,13 +26,28 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasType
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
+import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import org.catrobat.catroid.FaceRecognizer.Recognizer
 import org.catrobat.catroid.FaceRecognizer.env.FileUtils
 import org.catrobat.catroid.R
+import org.catrobat.catroid.content.StartScript
 import org.catrobat.catroid.content.actions.FaceNameTrainAction
+import org.catrobat.catroid.content.bricks.ChangeVariableBrick
+import org.catrobat.catroid.content.bricks.FaceNameTrain
+import org.catrobat.catroid.content.bricks.ForeverBrick
+import org.catrobat.catroid.content.bricks.SetVariableBrick
+import org.catrobat.catroid.formulaeditor.Formula
+import org.catrobat.catroid.formulaeditor.UserVariable
+import org.catrobat.catroid.stage.StageActivity
+import org.catrobat.catroid.uiespresso.util.UiTestUtils
+import org.catrobat.catroid.uiespresso.util.UserVariableAssertions.assertUserVariableEqualsWithTimeout
+import org.catrobat.catroid.uiespresso.util.UserVariableAssertions.assertUserVariableIsGreaterThanWithTimeout
+import org.catrobat.catroid.uiespresso.util.UserVariableAssertions.assertUserVariableNotEqualsForTimeMs
+import org.catrobat.catroid.uiespresso.util.rules.BaseActivityTestRule
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.endsWith
 import org.junit.After
@@ -40,18 +55,33 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.concurrent.TimeUnit
 
+/**
+ * The Face name train brick on the real stage, with this program:
+ *
+ *   When scene starts: Face name train; Set afterTraining to 1
+ *   When scene starts: Forever { Change ticks by 1 }
+ *
+ * afterTraining shows whether the script has moved past the brick; ticks shows
+ * whether the stage is running. The dialogs are BrickDialogManager dialogs, the
+ * photo picker is answered by Espresso-Intents, and its result reaches the
+ * action through StageActivity.onActivityResult as in the app.
+ */
 @RunWith(AndroidJUnit4::class)
 class FaceTrainingUiTest {
 
+    @get:Rule
+    val stageRule = BaseActivityTestRule(StageActivity::class.java, false, false)
+
     private lateinit var appContext: Context
     private lateinit var testContext: Context
-    private lateinit var scenario: ActivityScenario<TestHostActivity>
-    private lateinit var action: FaceNameTrainAction
+    private lateinit var afterTraining: UserVariable
+    private lateinit var ticks: UserVariable
     private val trainingIdle = TrainingIdlingResource()
 
     @Before
@@ -68,14 +98,8 @@ class FaceTrainingUiTest {
         IdlingPolicies.setIdlingResourceTimeout(TRAINING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         IdlingPolicies.setMasterPolicyTimeout(TRAINING_TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)
         IdlingRegistry.getInstance().register(trainingIdle)
-
         Intents.init()
-        scenario = ActivityScenario.launch(TestHostActivity::class.java)
-        scenario.onActivity { activity ->
-            action = FaceNameTrainAction()
-            action.openMenuForTest(activity)
-        }
-        onIdle()
+        createProject()
     }
 
     @After
@@ -83,43 +107,92 @@ class FaceTrainingUiTest {
         IdlingRegistry.getInstance().unregister(trainingIdle)
         IdlingPolicies.setIdlingResourceTimeout(DEFAULT_IDLING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         IdlingPolicies.setMasterPolicyTimeout(DEFAULT_MASTER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        FaceNameTrainAction.resetStateForTest(null)
-        if (::scenario.isInitialized) scenario.close()
         Intents.release()
+        FaceNameTrainAction.resetStateForTest(null)
         FileUtils.deleteAll()
         Recognizer.release()
     }
 
+    // ---------------- Brick dialog behaviour ----------------
+
     @Test
-    fun emptyMenuShowsAddLabelButton() {
-        onView(withText(text(R.string.face_train_title)))
-            .inRoot(isDialog())
-            .check(matches(isDisplayed()))
-        onView(withText(text(R.string.face_train_no_names)))
-            .inRoot(isDialog())
-            .check(matches(isDisplayed()))
-        onView(withText(text(R.string.face_train_add_new_name)))
-            .inRoot(isDialog())
-            .check(matches(isDisplayed()))
+    fun emptyMenuShowsAddNameAndDone() {
+        startStage()
+
+        menuTitle().check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_no_names))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     @Test
-    fun emptyLabelIsRejectedAndPickerDoesNotOpen() {
-        openNewLabelDialog()
+    fun scriptWaitsUntilDoneIsPressed() {
+        startStage()
+
+        assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
+
+        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).perform(click())
+        assertUserVariableEqualsWithTimeout(afterTraining, 1.0, CONTINUE_TIMEOUT_MS)
+        assertFalse("No dialog may stay open after Done", stageRule.activity.dialogIsShowing())
+    }
+
+    @Test
+    fun stageIsPausedWhileTheMenuIsOpenAndResumesAfterDone() {
+        startStage()
+        onIdle()
+
+        val ticksWhileOpen = ticks.value as Double
+        assertUserVariableNotEqualsForTimeMs(ticks, ticksWhileOpen + 1, HOLD_CHECK_MS)
+        assertEquals("The stage must not run while the menu is open", ticksWhileOpen, ticks.value as Double, 0.0)
+
+        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).perform(click())
+        assertUserVariableIsGreaterThanWithTimeout(ticks, ticksWhileOpen, CONTINUE_TIMEOUT_MS)
+    }
+
+    @Test
+    fun tapOutsideDoesNotCloseTheMenu() {
+        startStage()
+
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).click(5, 5)
+        onIdle()
+
+        menuTitle().check(matches(isDisplayed()))
+        assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
+    }
+
+    @Test
+    fun backKeyOpensTheStageMenuAndTheBrickKeepsWaiting() {
+        startStage()
+
+        pressBack()
+        onView(withId(R.id.stage_dialog_button_continue)).check(matches(isDisplayed()))
+        onView(withId(R.id.stage_dialog_button_continue)).perform(click())
+        onIdle()
+
+        menuTitle().check(matches(isDisplayed()))
+        assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
+    }
+
+    // ---------------- Names and photos ----------------
+
+    @Test
+    fun emptyNameIsRejectedAndPickerDoesNotOpen() {
+        startStage()
+        openNewNameDialog()
+
         onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).perform(click())
         onIdle()
 
         assertTrue(recognizer().classNames.isEmpty())
-        onView(withText(text(R.string.face_train_new_name_title)))
-            .inRoot(isDialog())
-            .check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_new_name_title))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     @Test
-    fun addingLabelOpensMultiImagePicker() {
+    fun addingNameOpensMultiImagePicker() {
         stubPicker(Activity.RESULT_CANCELED, null)
+        startStage()
 
-        addLabelThroughUi("Person A")
+        addNameThroughUi("Person A")
 
         intended(
             allOf(
@@ -133,10 +206,10 @@ class FaceTrainingUiTest {
     }
 
     @Test
-    fun clickingExistingLabelOpensImagePicker() {
+    fun choosingAnExistingNameOpensImagePicker() {
         recognizer().addPerson("Person A")
-        reopenMenu()
         stubPicker(Activity.RESULT_CANCELED, null)
+        startStage()
 
         onView(withText("Person A")).inRoot(isDialog()).perform(click())
         onIdle()
@@ -145,123 +218,109 @@ class FaceTrainingUiTest {
     }
 
     @Test
-    fun selectedImageIsTrainedAndSaved() {
-        val photo = requiredAssetUri("faces/p01_train1.jpg")
-        stubPicker(Activity.RESULT_OK, Intent().setData(photo))
+    fun selectedImageIsTrainedAndSavedAndTheMenuReturns() {
+        stubPicker(Activity.RESULT_OK, Intent().setData(requiredAssetUri("faces/p01_train1.jpg")))
+        startStage()
 
-        addLabelThroughUi("Person A")
+        addNameThroughUi("Person A")
         waitForTrainingToFinish()
 
         assertEquals(listOf("Person A"), recognizer().classNames)
         assertTrue("Selected image produced no saved embeddings", recognizer().getPhotoCount(0) > 0)
         assertEquals(listOf(1, 1), FaceNameTrainAction.getProgressForTest().toList())
-        assertFalse(FaceNameTrainAction.isTrainingForTest())
+        onView(withText("Person A")).inRoot(isDialog()).check(matches(isDisplayed()))
+        assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
     }
 
     @Test
     fun multipleSelectedImagesAreAllProcessed() {
-        val first = requiredAssetUri("faces/p01_train1.jpg")
-        val second = requiredAssetUri("faces/p01_train2.jpg")
-        val selection = ClipData.newUri(appContext.contentResolver, "face", first).apply {
-            addItem(ClipData.Item(second))
-        }
+        val selection = ClipData.newUri(appContext.contentResolver, "face", requiredAssetUri("faces/p01_train1.jpg"))
+            .apply { addItem(ClipData.Item(requiredAssetUri("faces/p01_train2.jpg"))) }
         stubPicker(Activity.RESULT_OK, Intent().apply { clipData = selection })
+        startStage()
 
-        addLabelThroughUi("Person A")
+        addNameThroughUi("Person A")
         waitForTrainingToFinish()
 
         assertTrue("Selected images produced no saved embeddings", recognizer().getPhotoCount(0) > 0)
         assertEquals(listOf(2, 2), FaceNameTrainAction.getProgressForTest().toList())
-        assertFalse(FaceNameTrainAction.isTrainingForTest())
     }
 
     @Test
-    fun cancellingPickerKeepsLabelButDoesNotTrain() {
+    fun cancellingPickerKeepsNameButDoesNotTrain() {
         stubPicker(Activity.RESULT_CANCELED, null)
+        startStage()
 
-        addLabelThroughUi("Person A")
+        addNameThroughUi("Person A")
 
         assertEquals(listOf("Person A"), recognizer().classNames)
         assertEquals(0, recognizer().getPhotoCount(0))
         assertFalse(FaceNameTrainAction.isTrainingForTest())
+        menuTitle().check(matches(isDisplayed()))
     }
 
     @Test
     fun imageWithoutFaceDoesNotCreateTrainingData() {
-        val photo = requiredAssetUri("faces/no_face.jpeg")
-        stubPicker(Activity.RESULT_OK, Intent().setData(photo))
+        stubPicker(Activity.RESULT_OK, Intent().setData(requiredAssetUri("faces/no_face.jpeg")))
+        startStage()
 
-        addLabelThroughUi("Person A")
+        addNameThroughUi("Person A")
         waitForTrainingToFinish()
 
         assertEquals(listOf("Person A"), recognizer().classNames)
         assertEquals(0, recognizer().getPhotoCount(0))
-        assertFalse(FaceNameTrainAction.isTrainingForTest())
     }
 
     /**
      * StageActivity and StageResourceHolder may both forward the same picker
      * result. The first one must start training; a second one arriving while
-     * training runs must be ignored and must not start a second run.
-     *
-     * The first call is the positive control: a handleResult() that did nothing
-     * would never start training and fail the first assertion.
+     * training runs must be ignored. The first call is the positive control.
      */
     @Test
     fun duplicatePickerResultDuringTrainingIsIgnored() {
         recognizer().addPerson("Person A")
+        startStage()
         val onePhoto = Intent().setData(requiredAssetUri("faces/p01_train1.jpg"))
         val twoPhotos = Intent().apply {
-            clipData = ClipData.newUri(
-                appContext.contentResolver, "face", requiredAssetUri("faces/p01_train2.jpg")
-            ).apply { addItem(ClipData.Item(requiredAssetUri("faces/p01_train3.jpg"))) }
+            clipData = ClipData.newUri(appContext.contentResolver, "face", requiredAssetUri("faces/p01_train2.jpg"))
+                .apply { addItem(ClipData.Item(requiredAssetUri("faces/p01_train3.jpg"))) }
         }
 
-        scenario.onActivity {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val action = requireNotNull(FaceNameTrainAction.currentInstance) { "The brick has not run" }
             FaceNameTrainAction.setPendingNameForTest("Person A")
             action.handleResult(FaceNameTrainAction.REQUEST_FIRST, Activity.RESULT_OK, onePhoto)
-            assertTrue(
-                "The first picker result must start training",
-                FaceNameTrainAction.isTrainingForTest()
-            )
+            assertTrue("The first picker result must start training", FaceNameTrainAction.isTrainingForTest())
             assertEquals(1, FaceNameTrainAction.getProgressForTest()[1])
 
             // Re-arm the pending name so that only the in-progress guard can stop
             // the duplicate from starting a second, two-photo run.
             FaceNameTrainAction.setPendingNameForTest("Person A")
             action.handleResult(FaceNameTrainAction.REQUEST_FIRST, Activity.RESULT_OK, twoPhotos)
-
-            assertEquals(
-                "A duplicate result must not replace the running training",
-                1,
-                FaceNameTrainAction.getProgressForTest()[1]
-            )
-            assertEquals("Person A", FaceNameTrainAction.getPendingNameForTest())
+            assertEquals("A duplicate result must not replace the running training",
+                         1, FaceNameTrainAction.getProgressForTest()[1])
         }
         waitForTrainingToFinish()
 
         assertEquals(listOf(1, 1), FaceNameTrainAction.getProgressForTest().toList())
-        assertEquals(listOf("Person A"), recognizer().classNames)
-        assertTrue(
-            "The first result produced no saved embeddings",
-            recognizer().getPhotoCount(0) > 0
-        )
+        assertTrue("The first result produced no saved embeddings", recognizer().getPhotoCount(0) > 0)
     }
 
     @Test
-    fun deleteNoKeepsLabel() {
+    fun deleteNoKeepsName() {
         recognizer().addPerson("Person A")
-        reopenMenu()
+        startStage()
 
-        onView(withText(DELETE_SYMBOL)).inRoot(isDialog()).perform(click())
+        chooseNameToDelete("Person A")
         onView(withText(text(R.string.face_train_no))).inRoot(isDialog()).perform(click())
         onIdle()
 
         assertEquals(listOf("Person A"), recognizer().classNames)
+        menuTitle().check(matches(isDisplayed()))
     }
 
     @Test
-    fun deleteYesRemovesLabelAndItsEmbeddings() {
+    fun deleteYesRemovesNameAndItsEmbeddings() {
         val bitmap = requiredBitmap("faces/p01_train1.jpg")
         try {
             val index = recognizer().addPerson("Person A")
@@ -271,28 +330,56 @@ class FaceTrainingUiTest {
         } finally {
             bitmap.recycle()
         }
-        reopenMenu()
+        startStage()
 
-        onView(withText(DELETE_SYMBOL)).inRoot(isDialog()).perform(click())
+        chooseNameToDelete("Person A")
         onView(withText(text(R.string.face_train_yes))).inRoot(isDialog()).perform(click())
         onIdle()
 
         assertTrue(recognizer().classNames.isEmpty())
         assertEquals(0, recognizer().getPhotoCount(0))
-        onView(withText(text(R.string.face_train_no_names)))
-            .inRoot(isDialog())
-            .check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_no_names))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
-    private fun openNewLabelDialog() {
-        onView(withText(text(R.string.face_train_add_new_name)))
-            .inRoot(isDialog())
-            .perform(click())
+    // ---------------- Helpers ----------------
+
+    private fun createProject() {
+        val project = UiTestUtils.createDefaultTestProject("FaceTrainingUiTest")
+        afterTraining = UserVariable("afterTraining", 0.0)
+        ticks = UserVariable("ticks", 0.0)
+        project.addUserVariable(afterTraining)
+        project.addUserVariable(ticks)
+
+        val script = UiTestUtils.getDefaultTestScript(project)
+        script.addBrick(FaceNameTrain())
+        script.addBrick(SetVariableBrick(Formula(1.0), afterTraining))
+
+        val forever = ForeverBrick()
+        forever.addBrick(ChangeVariableBrick(Formula(1.0), ticks))
+        UiTestUtils.getDefaultTestSprite(project).addScript(StartScript().apply { addBrick(forever) })
+    }
+
+    /** Launches the stage and waits until the brick's first dialog is open. */
+    private fun startStage() {
+        stageRule.launchActivity(null)
+        val dialogOpen = BrickDialogOpenIdlingResource(stageRule.activity)
+        IdlingRegistry.getInstance().register(dialogOpen)
+        try {
+            onIdle()
+        } finally {
+            IdlingRegistry.getInstance().unregister(dialogOpen)
+        }
+    }
+
+    private fun menuTitle() = onView(withText(text(R.string.face_train_title))).inRoot(isDialog())
+
+    private fun openNewNameDialog() {
+        onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).perform(click())
         onIdle()
     }
 
-    private fun addLabelThroughUi(name: String) {
-        openNewLabelDialog()
+    private fun addNameThroughUi(name: String) {
+        openNewNameDialog()
         onView(withClassName(endsWith("EditText")))
             .inRoot(isDialog())
             .perform(clearText(), typeText(name), closeSoftKeyboard())
@@ -300,15 +387,16 @@ class FaceTrainingUiTest {
         onIdle()
     }
 
-    private fun reopenMenu() {
-        scenario.onActivity { action.openMenuForTest(it) }
+    private fun chooseNameToDelete(name: String) {
+        onView(withText(text(R.string.face_train_delete))).inRoot(isDialog()).perform(click())
         onIdle()
+        onView(withText(name)).inRoot(isDialog()).perform(click())
+        onIdle()
+        onView(withText(text(R.string.face_train_delete_title))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     private fun stubPicker(resultCode: Int, data: Intent?) {
-        intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(
-            Instrumentation.ActivityResult(resultCode, data)
-        )
+        intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(Instrumentation.ActivityResult(resultCode, data))
     }
 
     private fun recognizer(): Recognizer = Recognizer.getInstance(appContext)
@@ -338,9 +426,9 @@ class FaceTrainingUiTest {
     }
 
     /**
-     * Espresso's onIdle() waits for the main looper and for [trainingIdle], so
-     * this returns once the picker result has been handled and any training it
-     * started has finished (or fails after TRAINING_TIMEOUT_SECONDS).
+     * onIdle() waits for the main looper and for [trainingIdle], so this returns
+     * once the picker result has been handled and any training it started has
+     * finished (or fails after TRAINING_TIMEOUT_SECONDS).
      */
     private fun waitForTrainingToFinish() {
         onIdle()
@@ -367,9 +455,30 @@ class FaceTrainingUiTest {
         }
     }
 
+    /** Busy until a BrickDialogManager dialog is open on [stage]; the models load first. */
+    private class BrickDialogOpenIdlingResource(private val stage: StageActivity) : IdlingResource {
+        @Volatile
+        private var callback: IdlingResource.ResourceCallback? = null
+
+        override fun getName(): String = "Face training dialog open"
+
+        override fun isIdleNow(): Boolean {
+            val idle = stage.dialogIsShowing()
+            if (idle) {
+                callback?.onTransitionToIdle()
+            }
+            return idle
+        }
+
+        override fun registerIdleTransitionCallback(callback: IdlingResource.ResourceCallback?) {
+            this.callback = callback
+        }
+    }
+
     companion object {
-        private const val DELETE_SYMBOL = "\u2715"
         private const val TRAINING_TIMEOUT_SECONDS = 60L
+        private const val HOLD_CHECK_MS = 1500
+        private const val CONTINUE_TIMEOUT_MS = 3000
 
         /** Espresso's own defaults, restored so other test classes are unaffected. */
         private const val DEFAULT_IDLING_TIMEOUT_SECONDS = 26L
