@@ -2348,7 +2348,6 @@ needs read and write access to it. You can always change permissions through you
     <string name="face_train_new_name_title">Add new name</string>
     <string name="face_train_name_hint">Enter a name</string>
     <string name="face_train_name_subtitle">Type the name, then choose photos of that person</string>
-    <string name="face_train_name_required">Name required</string>
     <string name="face_train_next">Next</string>
     <string name="face_train_cancel">Cancel</string>
 
@@ -2364,6 +2363,5 @@ needs read and write access to it. You can always change permissions through you
     <string name="face_train_error">Training failed: %1$s</string>
     <string name="face_train_no_photos">No photos selected</string>
 
-    <string name="face_train_ok">OK</string>
 
 </resources>

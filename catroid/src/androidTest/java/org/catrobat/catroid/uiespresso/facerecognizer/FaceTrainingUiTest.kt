@@ -25,12 +25,14 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasType
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isEnabled
 import androidx.test.espresso.matcher.ViewMatchers.withClassName
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
+import com.google.android.material.textfield.TextInputLayout
 import org.catrobat.catroid.FaceRecognizer.Recognizer
 import org.catrobat.catroid.FaceRecognizer.env.FileUtils
 import org.catrobat.catroid.R
@@ -50,6 +52,7 @@ import org.catrobat.catroid.uiespresso.util.UserVariableAssertions.assertUserVar
 import org.catrobat.catroid.uiespresso.util.rules.BaseActivityTestRule
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.endsWith
+import org.hamcrest.Matchers.not
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -176,15 +179,44 @@ class FaceTrainingUiTest {
     // ---------------- Names and photos ----------------
 
     @Test
-    fun emptyNameIsRejectedAndPickerDoesNotOpen() {
+    fun emptyNameIsRejectedInlineAndNextIsDisabled() {
         startStage()
         openNewNameDialog()
 
-        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).perform(click())
-        onIdle()
+        onView(withText(text(R.string.name_empty))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).check(matches(not(isEnabled())))
 
         assertTrue(recognizer().classNames.isEmpty())
         onView(withText(text(R.string.face_train_new_name_title))).inRoot(isDialog()).check(matches(isDisplayed()))
+    }
+
+    @Test
+    fun existingNameIsRejectedInlineAndNextIsDisabled() {
+        recognizer().addPerson("Person A")
+        startStage()
+        openNewNameDialog()
+
+        onView(withClassName(endsWith("EditText")))
+            .inRoot(isDialog())
+            .perform(typeText("Person A"), closeSoftKeyboard())
+
+        onView(withText(text(R.string.name_already_exists))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).check(matches(not(isEnabled())))
+        assertEquals(listOf("Person A"), recognizer().classNames)
+    }
+
+    @Test
+    fun nameFieldIsAMaterialTextInputWithAHint() {
+        startStage()
+        openNewNameDialog()
+
+        onView(withId(R.id.input))
+            .inRoot(isDialog())
+            .check(matches(allOf(isDisplayed(), withClassName(endsWith("TextInputLayout")))))
+        onView(withId(R.id.input)).inRoot(isDialog()).check { view, noView ->
+            if (noView != null) throw noView
+            assertEquals(text(R.string.face_train_name_hint), (view as TextInputLayout).hint?.toString())
+        }
     }
 
     @Test

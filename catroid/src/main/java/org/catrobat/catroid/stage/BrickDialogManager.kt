@@ -26,14 +26,12 @@ package org.catrobat.catroid.stage
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.DialogInterface
-import android.text.InputType
 import android.text.method.LinkMovementMethod
 import android.view.ContextThemeWrapper
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.WindowManager
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.text.HtmlCompat
@@ -45,6 +43,8 @@ import org.catrobat.catroid.common.Constants
 import org.catrobat.catroid.content.actions.AskAction
 import org.catrobat.catroid.content.actions.FaceNameTrainAction
 import org.catrobat.catroid.content.actions.WebAction
+import org.catrobat.catroid.ui.recyclerview.dialog.TextInputDialog
+import org.catrobat.catroid.ui.recyclerview.dialog.textwatcher.InputWatcher
 import java.net.URI
 import java.util.ArrayList
 import java.util.Collections
@@ -227,35 +227,29 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         return builder.create()
     }
 
+    /**
+     * Catroid's name dialog: TextInputDialog (dialog_text_input.xml, a Material
+     * TextInputLayout with a hint) and the standard InputWatcher, which shows
+     * empty, blank and duplicate names inline and disables Next until the name
+     * is valid, as the "new variable" dialog does.
+     */
     private fun createFaceTrainNewNameDialog(action: FaceNameTrainAction): Dialog {
-        val input = EditText(stageActivity).apply {
-            hint = stageActivity.getString(R.string.face_train_name_hint)
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-        }
-        val dialog = faceTrainBuilder(stageActivity.getString(R.string.face_train_new_name_title))
+        val builder = TextInputDialog.Builder(ContextThemeWrapper(stageActivity, R.style.Theme_AppCompat_Dialog))
+        builder.setHint(stageActivity.getString(R.string.face_train_name_hint))
+            .setTextWatcher(InputWatcher.TextWatcher().apply { setScope(action.personNames()) })
+            .setPositiveButton(
+                stageActivity.getString(R.string.face_train_next),
+                TextInputDialog.OnClickListener { _, name -> thenOnDismiss { action.onNewName(name.trim()) } }
+            )
+        builder.setTitle(stageActivity.getString(R.string.face_train_new_name_title))
             .setMessage(stageActivity.getString(R.string.face_train_name_subtitle))
-            .setView(input)
-            // Replaced in the show listener, so an empty name keeps the dialog open.
-            .setPositiveButton(stageActivity.getString(R.string.face_train_next), null)
             .setNegativeButton(stageActivity.getString(R.string.face_train_cancel)) { _, _ ->
                 thenOnDismiss { action.onNewNameCancelled() }
             }
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val name = input.text.toString().trim()
-                if (name.isEmpty()) {
-                    input.error = stageActivity.getString(R.string.face_train_name_required)
-                } else {
-                    thenOnDismiss { action.onNewName(name) }
-                    dialog.dismiss()
-                }
-            }
-        }
-        input.requestFocus()
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-        return dialog
+            .setCancelable(false)
+            .setOnKeyListener(this)
+            .setOnDismissListener(this)
+        return builder.create()
     }
 
     private fun createFaceTrainDeleteChoiceDialog(action: FaceNameTrainAction): Dialog =
@@ -282,21 +276,16 @@ class BrickDialogManager(val stageActivity: StageActivity) :
     }
 
     /** No buttons: the action closes it when training has finished. */
+    /** No buttons: the action closes it when training has finished. */
     private fun createFaceTrainProgressDialog(action: FaceNameTrainAction): Dialog {
-        val bar = ProgressBar(stageActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = false
+        val view = LayoutInflater.from(stageActivity).inflate(R.layout.dialog_face_train_progress, null)
+        val bar = view.findViewById<ProgressBar>(R.id.face_train_progress_bar).apply {
             max = action.progressMax()
             progress = action.progressValue()
         }
-        val padding = (24 * stageActivity.resources.displayMetrics.density).toInt()
-        val container = LinearLayout(stageActivity).apply {
-            setPadding(padding, 0, padding, 0)
-            addView(bar, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }
         val dialog = faceTrainBuilder(stageActivity.getString(R.string.face_train_progress_title))
             .setMessage(action.progressText(stageActivity))
-            .setView(container)
+            .setView(view)
             .create()
         dialog.setOnShowListener { action.onProgressDialogShown(dialog, bar) }
         return dialog
