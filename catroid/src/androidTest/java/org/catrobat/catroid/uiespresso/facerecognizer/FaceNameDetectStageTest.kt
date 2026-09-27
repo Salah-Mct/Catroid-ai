@@ -46,10 +46,17 @@ import java.util.concurrent.atomic.AtomicInteger
  * and checks what reaches the variable. Everything between the brick and the
  * variable is production code: the action, FaceDetector's permission check,
  * run gate and finish(), SensorHandler and the formula, and the capture
- * Session with its recognition loop. Two tests use the real camera. The other
- * three replace only the camera (FaceDetector.FrameSource): the real Session
- * receives a fixture photo as every frame instead of a Camera2 JPEG, so the
- * expected name is known.
+ * Session with its recognition loop.
+ *
+ * Two tests leave the camera in place, but only one opens it: with nobody
+ * trained the camera must stay closed. The one that opens it cannot know who is
+ * in front of the phone, so it can only assert "a trained name or Unknown"; it
+ * does not show that a decoded and rotated camera frame is recognised. That
+ * needs the manual check described in the test protocol.
+ *
+ * The other three replace only the camera (FaceDetector.FrameSource): the real
+ * Session receives a fixture photo as every frame instead of a Camera2 JPEG, so
+ * the expected name is known.
  *
  * Whether the camera was opened is observed with CameraManager's availability
  * callback, which reports every open and close of a camera device.
