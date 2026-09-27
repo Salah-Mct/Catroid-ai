@@ -45,7 +45,9 @@ DEVICE_TESTS="org.catrobat.catroid.FaceRecognizer.FaceRecognizerLifecycleTest,\
 org.catrobat.catroid.FaceRecognizer.RecognizerTrainingOrderTest,\
 org.catrobat.catroid.FaceRecognizer.FaceRecognitionFalsePositiveTest,\
 org.catrobat.catroid.uiespresso.facerecognizer.FaceTrainingUiTest,\
-org.catrobat.catroid.uiespresso.facerecognizer.FaceNameDetectStageTest"
+org.catrobat.catroid.uiespresso.facerecognizer.FaceNameDetectStageTest,\
+org.catrobat.catroid.test.content.bricks.FaceNameBrickCategoryTest,\
+org.catrobat.catroid.test.content.bricks.BrickCategoryTest"
 
 # ---------------- environment ----------------
 
