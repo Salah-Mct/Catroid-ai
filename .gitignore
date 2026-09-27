@@ -38,9 +38,6 @@ bin/
 gen/
 jniLibs/
 
-# old location of the unpacked face fixtures (now build/generated), do not commit
-catroid/src/androidTest/assets/faces/
-
 # Local configuration file (sdk path, etc)
 local.properties
 
