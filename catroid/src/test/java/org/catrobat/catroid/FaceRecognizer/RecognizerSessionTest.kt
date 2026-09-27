@@ -101,15 +101,20 @@ class RecognizerSessionTest {
     }
 
     @Test
-    fun onceAFrameIsUsablePeekAgreesWithFinishSession() {
-        for (frames in 1..3) {
-            val totals = floatArrayOf(0.82f * frames, 0.30f * frames)
-            val peeked = recognizer.peekSession(session(frames, totals.copyOf()))
-            val finished = recognizer.finishSession(session(frames, totals.copyOf()))
+    fun peekDoesNotEndOrChangeTheSession() {
+        // Frame 1: A = 0.70, too weak for a single frame, so the peek is null.
+        val session = session(framesWithFace = 1, totals = floatArrayOf(0.70f, 0.10f))
+        assertNull(recognizer.peekSession(session))
 
-            assertEquals("frames=$frames", finished?.name, peeked?.name)
-            assertEquals("frames=$frames", finished!!.confidence, peeked!!.confidence, 0.0001f)
-        }
+        // The session keeps collecting: frame 2 adds A = 0.90, as addFrame would.
+        session.totals!![0] += 0.90f
+        session.totals!![1] += 0.10f
+        session.framesWithFace++
+        val result = recognizer.finishSession(session)
+
+        assertNotNull("The peek must leave the session usable", result)
+        assertEquals(PERSON_A, result?.name)
+        assertEquals("Average over both frames", 0.80f, result!!.confidence, 0.0001f)
     }
 
     @Test
