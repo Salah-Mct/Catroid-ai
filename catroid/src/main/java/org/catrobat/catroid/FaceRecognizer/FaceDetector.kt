@@ -122,7 +122,7 @@ object FaceDetector {
      *
      * This is what makes
      *
-     * Set variable rr to (face name detection)
+     * Set variable rr to (detected face name)
      *
      * work on its own, with no separate detect block. The read pauses until the
      * camera is finished, so the very next block sees the real name.

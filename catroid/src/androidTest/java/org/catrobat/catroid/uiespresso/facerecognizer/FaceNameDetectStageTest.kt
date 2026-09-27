@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  *   When scene starts
  *     Face name detection            (FaceNameDetect brick -> FaceNameDetectAction)
- *     Set variable sa to (face name detection)
+ *     Set variable sa to (detected face name)
  *     Show variable sa at X 100 Y 200, size 120 %, '#FF0000', centered
  *
  * and checks what reaches the variable. Everything between the brick and the
