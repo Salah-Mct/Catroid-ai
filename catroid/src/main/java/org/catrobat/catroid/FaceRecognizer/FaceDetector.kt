@@ -446,30 +446,32 @@ object FaceDetector {
                     return
                 }
 
-                cameraId = chooseCameraId(manager)
-                if (cameraId == null) {
+                val id = chooseCameraId(manager)
+                if (id == null) {
                     Log.e(TAG, "No usable camera")
                     end(UNKNOWN, 0f)
                     return
                 }
+                cameraId = id
 
-                val jpeg = pickJpegSize(manager, cameraId!!)
-                exposureBracket = buildExposureBracket(manager, cameraId!!)
+                val jpeg = pickJpegSize(manager, id)
+                exposureBracket = buildExposureBracket(manager, id)
                 Log.i(
                     TAG, ("Capturing " + jpeg.getWidth() + "x" + jpeg.getHeight()
-                        + " on camera " + cameraId)
+                        + " on camera " + id)
                 )
 
-                imageReader = ImageReader.newInstance(
+                val reader = ImageReader.newInstance(
                     jpeg.getWidth(), jpeg.getHeight(),
                     ImageFormat.JPEG, FrameBurst.FRAMES + 1
                 )
-                imageReader!!.setOnImageAvailableListener(onImageAvailable, handler)
+                imageReader = reader
+                reader.setOnImageAvailableListener(onImageAvailable, handler)
 
-                manager.openCamera(cameraId!!, object : CameraDevice.StateCallback() {
+                manager.openCamera(id, object : CameraDevice.StateCallback() {
                     override fun onOpened(device: CameraDevice) {
                         cameraDevice = device
-                        createSession()
+                        createSession(device, reader)
                     }
 
                     override fun onDisconnected(device: CameraDevice) {
@@ -492,42 +494,45 @@ object FaceDetector {
             }
         }
 
-        fun createSession() {
+        fun createSession(device: CameraDevice, reader: ImageReader) {
             try {
-                val target = imageReader!!.getSurface()
+                val target = reader.getSurface()
                 /*
 				 * A delay after opening a camera does not converge 3A unless requests are
 				 * actually flowing.  Use a headless SurfaceTexture as a preview target;
 				 * this class still needs no Activity or visible preview.
 				 */
                 /* Detached SurfaceTexture: no OpenGL context or Activity is required. */
-                previewTexture = SurfaceTexture(false)
-                previewTexture!!.setDefaultBufferSize(640, 480)
-                previewSurface = Surface(previewTexture)
-                cameraDevice!!.createCaptureSession(
-                    Arrays.asList<Surface?>(previewSurface, target),
+                val texture = SurfaceTexture(false)
+                texture.setDefaultBufferSize(640, 480)
+                previewTexture = texture
+                val preview = Surface(texture)
+                previewSurface = preview
+                device.createCaptureSession(
+                    Arrays.asList<Surface?>(preview, target),
                     object : CameraCaptureSession.StateCallback() {
                         override fun onConfigured(s: CameraCaptureSession) {
                             captureSession = s
                             try {
                                 val previewBuilder =
-                                    cameraDevice!!.createCaptureRequest(
+                                    device.createCaptureRequest(
                                         CameraDevice.TEMPLATE_PREVIEW
                                     )
-                                previewBuilder.addTarget(previewSurface!!)
+                                previewBuilder.addTarget(preview)
                                 configure3A(previewBuilder)
-                                captureSession!!.setRepeatingRequest(
+                                s.setRepeatingRequest(
                                     previewBuilder.build(), null, handler
                                 )
 
-                                stillBuilder = cameraDevice!!.createCaptureRequest(
+                                val still = device.createCaptureRequest(
                                     CameraDevice.TEMPLATE_STILL_CAPTURE
                                 )
-                                stillBuilder!!.addTarget(target)
-                                configure3A(stillBuilder!!)
-                                stillBuilder!!.set<Byte?>(CaptureRequest.JPEG_QUALITY, 95.toByte())
+                                still.addTarget(target)
+                                configure3A(still)
+                                still.set<Byte?>(CaptureRequest.JPEG_QUALITY, 95.toByte())
+                                stillBuilder = still
 
-                                handler!!.postDelayed(
+                                handler?.postDelayed(
                                     Runnable { this@Session.takeShot() },
                                     FIRST_SHOT_DELAY_MS
                                 )
@@ -551,7 +556,9 @@ object FaceDetector {
 
         fun takeShot() {
             val source = frames
-            if (ended || (source == null && (captureSession == null || stillBuilder == null))) {
+            val session = captureSession
+            val still = stillBuilder
+            if (ended || (source == null && (session == null || still == null))) {
                 return
             }
             if (shotsRequested >= FrameBurst.FRAMES) {
@@ -564,13 +571,16 @@ object FaceDetector {
                 deliverFromSource(source, bracketIndex)
                 return
             }
+            if (session == null || still == null) {
+                return
+            }
             try {
-                stillBuilder!!.set<Int?>(
+                still.set<Int?>(
                     CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,
                     exposureBracket[min(bracketIndex, exposureBracket.size - 1)]
                 )
-                captureSession!!.capture(
-                    stillBuilder!!.build(),
+                session.capture(
+                    still.build(),
                     object : CameraCaptureSession.CaptureCallback() {}, handler
                 )
             } catch (e: Exception) {
@@ -595,7 +605,7 @@ object FaceDetector {
                 var decoded: Bitmap? = null
                 var upright: Bitmap? = null
                 try {
-                    image = reader!!.acquireLatestImage()
+                    image = reader?.acquireLatestImage()
                     if (ended || image == null) {
                         return@OnImageAvailableListener
                     }
@@ -628,7 +638,11 @@ object FaceDetector {
 
         /** Every frame, from the camera or a [FrameSource], goes through here. */
         fun handleFrame(frame: Bitmap?, mirrorToo: Boolean) {
-            val activeBurst = burst!!
+            val activeBurst = burst
+            if (activeBurst == null) {
+                decide()
+                return
+            }
             if (activeBurst.addFrame(frame, mirrorToo)) {
                 endWith(activeBurst.result)
             } else {
@@ -655,10 +669,11 @@ object FaceDetector {
             if (ended) {
                 return
             }
-            if (shotsRequested >= FrameBurst.FRAMES) {
+            val detectorHandler = handler
+            if (shotsRequested >= FrameBurst.FRAMES || detectorHandler == null) {
                 decide()
             } else {
-                handler!!.postDelayed(Runnable { this.takeShot() }, BETWEEN_SHOTS_DELAY_MS)
+                detectorHandler.postDelayed(Runnable { this.takeShot() }, BETWEEN_SHOTS_DELAY_MS)
             }
         }
 
@@ -697,26 +712,16 @@ object FaceDetector {
 
         fun closeCamera() {
             try {
-                if (captureSession != null) {
-                    captureSession!!.close()
-                    captureSession = null
-                }
-                if (cameraDevice != null) {
-                    cameraDevice!!.close()
-                    cameraDevice = null
-                }
-                if (imageReader != null) {
-                    imageReader!!.close()
-                    imageReader = null
-                }
-                if (previewSurface != null) {
-                    previewSurface!!.release()
-                    previewSurface = null
-                }
-                if (previewTexture != null) {
-                    previewTexture!!.release()
-                    previewTexture = null
-                }
+                captureSession?.close()
+                captureSession = null
+                cameraDevice?.close()
+                cameraDevice = null
+                imageReader?.close()
+                imageReader = null
+                previewSurface?.release()
+                previewSurface = null
+                previewTexture?.release()
+                previewTexture = null
                 stillBuilder = null
             } catch (ignored: Exception) {
                 // nothing useful to do
@@ -745,10 +750,11 @@ object FaceDetector {
          * approximate upright is enough.
          */
         fun rotateToSensorUpright(decoded: Bitmap): Bitmap? {
+            val id = cameraId ?: return decoded
             try {
                 val manager =
                     context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val sensor = manager.getCameraCharacteristics(cameraId!!)
+                val sensor = manager.getCameraCharacteristics(id)
                     .get<Int?>(CameraCharacteristics.SENSOR_ORIENTATION)
                 if (sensor == null || sensor % 360 == 0) {
                     return decoded
@@ -766,10 +772,11 @@ object FaceDetector {
 
         val isFrontCamera: Boolean
             get() {
+                val id = cameraId ?: return true
                 try {
                     val manager =
                         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                    val facing = manager.getCameraCharacteristics(cameraId!!)
+                    val facing = manager.getCameraCharacteristics(id)
                         .get<Int?>(CameraCharacteristics.LENS_FACING)
                     return facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT
                 } catch (e: Exception) {
@@ -832,13 +839,15 @@ object FaceDetector {
                 CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP
             )
             val values = IntArray(EXPOSURE_BRACKET_EV.size)
-            if (range == null || step == null || step.toFloat() <= 0f) {
+            val lower = range?.getLower()
+            val upper = range?.getUpper()
+            if (lower == null || upper == null || step == null || step.toFloat() <= 0f) {
                 return values // Device does not expose exposure compensation.
             }
             val evPerIndex = step.toFloat()
             for (i in values.indices) {
                 val index = Math.round(EXPOSURE_BRACKET_EV[i] / evPerIndex)
-                values[i] = max(range.getLower()!!, min(range.getUpper()!!, index))
+                values[i] = max(lower, min(upper, index))
             }
             Log.i(
                 TAG,
