@@ -1,6 +1,5 @@
 package org.catrobat.catroid.content.actions
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -9,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.ProgressBar
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.annotation.VisibleForTesting
 import com.badlogic.gdx.scenes.scene2d.Action
 import org.catrobat.catroid.FaceRecognizer.Recognizer

@@ -25,7 +25,9 @@ package org.catrobat.catroid.stage
 
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.Context
 import android.content.DialogInterface
+import android.preference.PreferenceManager
 import android.text.method.LinkMovementMethod
 import android.view.ContextThemeWrapper
 import android.view.KeyEvent
@@ -34,6 +36,7 @@ import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog as CatroidAlertDialog
 import androidx.core.text.HtmlCompat
 import com.badlogic.gdx.scenes.scene2d.Action
 import org.catrobat.catroid.BuildConfig
@@ -45,6 +48,7 @@ import org.catrobat.catroid.content.actions.FaceNameTrainAction
 import org.catrobat.catroid.content.actions.WebAction
 import org.catrobat.catroid.ui.recyclerview.dialog.TextInputDialog
 import org.catrobat.catroid.ui.recyclerview.dialog.textwatcher.InputWatcher
+import org.catrobat.catroid.ui.settingsfragments.AccessibilityProfile
 import java.net.URI
 import java.util.ArrayList
 import java.util.Collections
@@ -198,8 +202,21 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         faceTrainNextStep = step
     }
 
-    private fun faceTrainBuilder(title: String): AlertDialog.Builder =
-        AlertDialog.Builder(ContextThemeWrapper(stageActivity, R.style.Theme_AppCompat_Dialog))
+    /**
+     * The face training dialogs are built like Catroid's in-app dialogs: an
+     * AppCompat AlertDialog on the Catroid theme (accent @color/accent), with the
+     * user's accessibility profile applied as BaseActivity does. StageActivity is
+     * not a BaseActivity, so its own theme carries neither. Created per dialog, so
+     * a changed profile applies to the next one.
+     */
+    private fun faceTrainContext(): Context =
+        ContextThemeWrapper(stageActivity, R.style.Catroid).also {
+            AccessibilityProfile.fromCurrentPreferences(PreferenceManager.getDefaultSharedPreferences(stageActivity))
+                .applyAccessibilityStyles(it.theme)
+        }
+
+    private fun faceTrainBuilder(title: String): CatroidAlertDialog.Builder =
+        CatroidAlertDialog.Builder(faceTrainContext())
             .setTitle(title)
             .setCancelable(false)
             .setOnKeyListener(this)
@@ -234,7 +251,7 @@ class BrickDialogManager(val stageActivity: StageActivity) :
      * is valid, as the "new variable" dialog does.
      */
     private fun createFaceTrainNewNameDialog(action: FaceNameTrainAction): Dialog {
-        val builder = TextInputDialog.Builder(ContextThemeWrapper(stageActivity, R.style.Theme_AppCompat_Dialog))
+        val builder = TextInputDialog.Builder(faceTrainContext())
         builder.setHint(stageActivity.getString(R.string.face_train_name_hint))
             .setTextWatcher(InputWatcher.TextWatcher().apply { setScope(action.personNames()) })
             .setPositiveButton(
@@ -278,7 +295,8 @@ class BrickDialogManager(val stageActivity: StageActivity) :
     /** No buttons: the action closes it when training has finished. */
     /** No buttons: the action closes it when training has finished. */
     private fun createFaceTrainProgressDialog(action: FaceNameTrainAction): Dialog {
-        val view = LayoutInflater.from(stageActivity).inflate(R.layout.dialog_face_train_progress, null)
+        val context = faceTrainContext()
+        val view = LayoutInflater.from(context).inflate(R.layout.dialog_face_train_progress, null)
         val bar = view.findViewById<ProgressBar>(R.id.face_train_progress_bar).apply {
             max = action.progressMax()
             progress = action.progressValue()

@@ -6,6 +6,8 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Button
+import androidx.core.content.ContextCompat
 import androidx.test.espresso.Espresso.onIdle
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.pressBack
@@ -126,6 +128,28 @@ class FaceTrainingUiTest {
         onView(withText(text(R.string.face_train_no_names))).inRoot(isDialog()).check(matches(isDisplayed()))
         onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).check(matches(isDisplayed()))
         onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).check(matches(isDisplayed()))
+    }
+
+    /**
+     * Colours come from Catroid's theme, not from AppCompat's defaults: the
+     * dialog buttons use @color/accent (#A8DFF4), not AppCompat's dark accent
+     * #80CBC4.
+     */
+    @Test
+    fun dialogButtonsUseTheCatroidAccent() {
+        startStage()
+
+        val accent = ContextCompat.getColor(appContext, R.color.accent)
+        for (label in listOf(R.string.face_train_done, R.string.face_train_add_new_name)) {
+            onView(withText(text(label))).inRoot(isDialog()).check { view, noView ->
+                if (noView != null) throw noView
+                assertEquals(
+                    "${text(label)} must use @color/accent",
+                    String.format("#%08X", accent),
+                    String.format("#%08X", (view as Button).currentTextColor)
+                )
+            }
+        }
     }
 
     @Test
