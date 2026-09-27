@@ -228,7 +228,7 @@ class BrickDialogManager(val stageActivity: StageActivity) :
             .setPositiveButton(stageActivity.getString(R.string.face_train_add_new_name)) { _, _ ->
                 thenOnDismiss { action.onAddNameChosen() }
             }
-            .setNegativeButton(stageActivity.getString(R.string.face_train_done)) { _, _ ->
+            .setNegativeButton(stageActivity.getString(R.string.done)) { _, _ ->
                 thenOnDismiss { action.onDone() }
             }
         if (names.isEmpty()) {
@@ -255,12 +255,12 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         builder.setHint(stageActivity.getString(R.string.face_train_name_hint))
             .setTextWatcher(InputWatcher.TextWatcher().apply { setScope(action.personNames()) })
             .setPositiveButton(
-                stageActivity.getString(R.string.face_train_next),
+                stageActivity.getString(R.string.next),
                 TextInputDialog.OnClickListener { _, name -> thenOnDismiss { action.onNewName(name.trim()) } }
             )
-        builder.setTitle(stageActivity.getString(R.string.face_train_new_name_title))
+        builder.setTitle(stageActivity.getString(R.string.face_train_add_new_name))
             .setMessage(stageActivity.getString(R.string.face_train_name_subtitle))
-            .setNegativeButton(stageActivity.getString(R.string.face_train_cancel)) { _, _ ->
+            .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
                 thenOnDismiss { action.onNewNameCancelled() }
             }
             .setCancelable(false)
@@ -274,19 +274,20 @@ class BrickDialogManager(val stageActivity: StageActivity) :
             .setItems(action.personNames().toTypedArray()) { _, which ->
                 thenOnDismiss { action.onDeleteTargetChosen(which) }
             }
-            .setNegativeButton(stageActivity.getString(R.string.face_train_cancel)) { _, _ ->
+            .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
                 thenOnDismiss { action.onDeleteCancelled() }
             }
             .create()
 
     private fun createFaceTrainDeleteConfirmDialog(action: FaceNameTrainAction, index: Int): Dialog {
         val name = action.personNames().getOrNull(index) ?: ""
-        return faceTrainBuilder(stageActivity.getString(R.string.face_train_delete_title))
-            .setMessage(stageActivity.getString(R.string.face_train_delete_message, name))
-            .setPositiveButton(stageActivity.getString(R.string.face_train_yes)) { _, _ ->
+        // Catroid's delete pattern: "Delete …?", "You can't undo this!", Delete / Cancel.
+        return faceTrainBuilder(stageActivity.getString(R.string.face_train_delete_title, name))
+            .setMessage(stageActivity.getString(R.string.dialog_confirm_delete))
+            .setPositiveButton(stageActivity.getString(R.string.delete)) { _, _ ->
                 thenOnDismiss { action.onDeleteConfirmed(index) }
             }
-            .setNegativeButton(stageActivity.getString(R.string.face_train_no)) { _, _ ->
+            .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
                 thenOnDismiss { action.onDeleteCancelled() }
             }
             .create()

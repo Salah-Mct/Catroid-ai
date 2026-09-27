@@ -127,7 +127,7 @@ class FaceTrainingUiTest {
         menuTitle().check(matches(isDisplayed()))
         onView(withText(text(R.string.face_train_no_names))).inRoot(isDialog()).check(matches(isDisplayed()))
         onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).check(matches(isDisplayed()))
-        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.done))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     /**
@@ -140,7 +140,7 @@ class FaceTrainingUiTest {
         startStage()
 
         val accent = ContextCompat.getColor(appContext, R.color.accent)
-        for (label in listOf(R.string.face_train_done, R.string.face_train_add_new_name)) {
+        for (label in listOf(R.string.done, R.string.face_train_add_new_name)) {
             onView(withText(text(label))).inRoot(isDialog()).check { view, noView ->
                 if (noView != null) throw noView
                 assertEquals(
@@ -158,7 +158,7 @@ class FaceTrainingUiTest {
 
         assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
 
-        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).perform(click())
+        onView(withText(text(R.string.done))).inRoot(isDialog()).perform(click())
         assertUserVariableEqualsWithTimeout(afterTraining, 1.0, CONTINUE_TIMEOUT_MS)
         assertFalse("No dialog may stay open after Done", stageRule.activity.dialogIsShowing())
     }
@@ -172,7 +172,7 @@ class FaceTrainingUiTest {
         assertUserVariableNotEqualsForTimeMs(ticks, ticksWhileOpen + 1, HOLD_CHECK_MS)
         assertEquals("The stage must not run while the menu is open", ticksWhileOpen, ticks.value as Double, 0.0)
 
-        onView(withText(text(R.string.face_train_done))).inRoot(isDialog()).perform(click())
+        onView(withText(text(R.string.done))).inRoot(isDialog()).perform(click())
         assertUserVariableIsGreaterThanWithTimeout(ticks, ticksWhileOpen, CONTINUE_TIMEOUT_MS)
     }
 
@@ -208,10 +208,10 @@ class FaceTrainingUiTest {
         openNewNameDialog()
 
         onView(withText(text(R.string.name_empty))).inRoot(isDialog()).check(matches(isDisplayed()))
-        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).check(matches(not(isEnabled())))
+        onView(withText(text(R.string.next))).inRoot(isDialog()).check(matches(not(isEnabled())))
 
         assertTrue(recognizer().classNames.isEmpty())
-        onView(withText(text(R.string.face_train_new_name_title))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     @Test
@@ -225,7 +225,7 @@ class FaceTrainingUiTest {
             .perform(typeText("Person A"), closeSoftKeyboard())
 
         onView(withText(text(R.string.name_already_exists))).inRoot(isDialog()).check(matches(isDisplayed()))
-        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).check(matches(not(isEnabled())))
+        onView(withText(text(R.string.next))).inRoot(isDialog()).check(matches(not(isEnabled())))
         assertEquals(listOf("Person A"), recognizer().classNames)
     }
 
@@ -368,7 +368,7 @@ class FaceTrainingUiTest {
         startStage()
 
         chooseNameToDelete("Person A")
-        onView(withText(text(R.string.face_train_no))).inRoot(isDialog()).perform(click())
+        onView(withText(text(R.string.cancel))).inRoot(isDialog()).perform(click())
         onIdle()
 
         assertEquals(listOf("Person A"), recognizer().classNames)
@@ -389,7 +389,7 @@ class FaceTrainingUiTest {
         startStage()
 
         chooseNameToDelete("Person A")
-        onView(withText(text(R.string.face_train_yes))).inRoot(isDialog()).perform(click())
+        onView(withText(text(R.string.delete))).inRoot(isDialog()).perform(click())
         onIdle()
 
         assertTrue(recognizer().classNames.isEmpty())
@@ -439,7 +439,7 @@ class FaceTrainingUiTest {
         onView(withClassName(endsWith("EditText")))
             .inRoot(isDialog())
             .perform(clearText(), typeText(name), closeSoftKeyboard())
-        onView(withText(text(R.string.face_train_next))).inRoot(isDialog()).perform(click())
+        onView(withText(text(R.string.next))).inRoot(isDialog()).perform(click())
         onIdle()
     }
 
@@ -448,7 +448,10 @@ class FaceTrainingUiTest {
         onIdle()
         onView(withText(name)).inRoot(isDialog()).perform(click())
         onIdle()
-        onView(withText(text(R.string.face_train_delete_title))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(appContext.getString(R.string.face_train_delete_title, name)))
+            .inRoot(isDialog())
+            .check(matches(isDisplayed()))
+        onView(withText(text(R.string.dialog_confirm_delete))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     private fun stubPicker(resultCode: Int, data: Intent?) {

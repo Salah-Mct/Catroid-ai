@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.ProgressBar
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.annotation.VisibleForTesting
 import com.badlogic.gdx.scenes.scene2d.Action
@@ -16,6 +15,7 @@ import org.catrobat.catroid.FaceRecognizer.env.FileUtils
 import org.catrobat.catroid.R
 import org.catrobat.catroid.stage.BrickDialogManager.DialogType
 import org.catrobat.catroid.stage.StageActivity
+import org.catrobat.catroid.utils.ToastUtil
 import java.util.concurrent.Executors
 
 /**
@@ -71,8 +71,11 @@ class FaceNameTrainAction : Action() {
         private var progressTotal = 1
         private var progressDone = 0
 
+        /** A training result for the user; success and failure look different. */
+        private class Outcome(val message: String, val success: Boolean)
+
         /** Result waiting to be shown, if training finished with no stage up. */
-        private var pendingOutcome: String? = null
+        private var pendingOutcome: Outcome? = null
 
         private var progressDialog: AlertDialog? = null
         private var progressBar: ProgressBar? = null
@@ -175,7 +178,7 @@ class FaceNameTrainAction : Action() {
                    if (initRecognizer()) {
                        showCurrentScreen()
                    } else {
-                       toast(R.string.face_train_error, "face recognition could not start")
+                       showError(R.string.face_train_not_available)
                        finished = true
                    }
                }, "face_train_init").start()
@@ -185,7 +188,7 @@ class FaceNameTrainAction : Action() {
     private fun showCurrentScreen() {
         pendingOutcome?.let {
             pendingOutcome = null
-            toast(it)
+            showOutcome(it)
         }
         show(if (trainingInProgress) DialogType.FACE_TRAIN_PROGRESS else DialogType.FACE_TRAIN_MENU)
     }
@@ -218,14 +221,21 @@ class FaceNameTrainAction : Action() {
         return if (initRecognizer()) recognizer else null
     }
 
-    private fun toast(resource: Int, vararg args: Any) {
-        val ctx = appContext ?: return
-        toast(ctx.getString(resource, *args))
+    /** Catroid's toasts (ToastUtil), always on the main thread. */
+    private fun showError(resource: Int) {
+        val ctx = stageActivity() ?: appContext ?: return
+        mainHandler.post { ToastUtil.showError(ctx, resource) }
     }
 
-    private fun toast(message: String) {
+    private fun showOutcome(outcome: Outcome) {
         val ctx = stageActivity() ?: appContext ?: return
-        mainHandler.post { Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show() }
+        mainHandler.post {
+            if (outcome.success) {
+                ToastUtil.showSuccess(ctx, outcome.message)
+            } else {
+                ToastUtil.showError(ctx, outcome.message)
+            }
+        }
     }
 
     // ---------------- Called by BrickDialogManager, on the main thread ----------------
@@ -304,7 +314,7 @@ class FaceNameTrainAction : Action() {
         val name = current?.classNames?.getOrNull(targetIndex)
         val activity = stageActivity()
         if (name == null || activity == null) {
-            toast("That name is no longer in the list")
+            showError(R.string.face_train_name_missing)
             show(DialogType.FACE_TRAIN_MENU)
             return
         }
@@ -348,7 +358,7 @@ class FaceNameTrainAction : Action() {
             if (name.isNullOrEmpty()) {
                 Log.e(TAG, "No pending name for requestCode $requestCode")
             }
-            toast(R.string.face_train_no_photos)
+            showError(R.string.face_train_no_photos)
             show(DialogType.FACE_TRAIN_MENU)
             return
         }
@@ -417,9 +427,9 @@ class FaceNameTrainAction : Action() {
                 Log.e(TAG, "Training failed", t)
             }
             val outcome = when {
-                error != null -> ctx.getString(R.string.face_train_error, error)
-                added == 0 -> ctx.getString(R.string.face_train_no_face)
-                else -> ctx.getString(R.string.face_train_success)
+                error != null -> Outcome(ctx.getString(R.string.face_train_error, error), success = false)
+                added == 0 -> Outcome(ctx.getString(R.string.face_train_no_face), success = false)
+                else -> Outcome(ctx.getString(R.string.face_train_success), success = true)
             }
 
             val shownFor = System.currentTimeMillis() - progressShownAt
@@ -429,7 +439,7 @@ class FaceNameTrainAction : Action() {
     }
 
     /** Main thread. Closes the progress dialog and returns to the name list. */
-    private fun finishTraining(outcome: String) {
+    private fun finishTraining(outcome: Outcome) {
         trainingInProgress = false
         val dialog = progressDialog
         progressDialog = null
@@ -447,7 +457,7 @@ class FaceNameTrainAction : Action() {
             pendingOutcome = outcome
             return
         }
-        owner.toast(outcome)
+        owner.showOutcome(outcome)
         owner.show(DialogType.FACE_TRAIN_MENU)
     }
 

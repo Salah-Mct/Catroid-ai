@@ -143,7 +143,8 @@
     <string formatted="false" name="preference_title">Settings</string>
     <string formatted="false" name="preference_title_language">Language</string>
     <string formatted="false" name="preference_description_language">Set the app\'s language</string>
-    <string name="brick_face_name" formatted="false">Add Face Sample and Train</string>
+    <string formatted="false" name="brick_face_name">Add face samples and train</string>
+    <string formatted="false" name="brick_face_name_detect">Detect face name</string>
     <string formatted="false" name="preference_title_web_access">Web access</string>
     <string formatted="false" name="preference_description_web_access">Edit to add or remove trusted domains</string>
     <string formatted="false" name="preference_screen_web_access_title">Edit trusted domains</string>
@@ -166,8 +167,6 @@
         face detection bricks and sensors</string>
         <string formatted="false" name="preference_description_ai_face_name_detection">Enable
         face name detection bricks and sensors</string>
-       <string name="formula_editor_sensor_on_device_face_detected" formatted="false">Face
-           name detection</string>
     <string formatted="false" name="preference_title_ai_pose_detection">Pose detection</string>
     <string formatted="false" name="preference_description_ai_pose_detection">Enable
         pose detection bricks and sensors</string>
@@ -2338,30 +2337,22 @@ needs read and write access to it. You can always change permissions through you
     <string formatted="false" name="sort">Sort</string>
     <string formatted="false" name="checkbox">checkbox</string>
     <!-- Face Train -->
-    <string name="face_train_title">Add Photos</string>
-    <string name="face_train_add_new_name">Add new name</string>
-    <string name="face_train_no_names">No names yet.</string>
-    <string name="face_train_done">Done</string>
-    <string name="face_train_delete">Delete a name</string>
-    <string name="face_train_delete_choose_title">Delete which name?</string>
+    <string formatted="false" name="face_train_title">Face names</string>
+    <string formatted="false" name="face_train_add_new_name">Add new name</string>
+    <string formatted="false" name="face_train_no_names">No names yet.</string>
+    <string formatted="false" name="face_train_name_hint">Enter a name</string>
+    <string formatted="false" name="face_train_name_subtitle">Type the name, then choose photos of that person</string>
+    <string formatted="false" name="face_train_delete">Delete a name</string>
+    <string formatted="false" name="face_train_delete_choose_title">Delete which name?</string>
+    <string formatted="false" name="face_train_delete_title">Delete \"%1$s\"?</string>
 
-    <string name="face_train_new_name_title">Add new name</string>
-    <string name="face_train_name_hint">Enter a name</string>
-    <string name="face_train_name_subtitle">Type the name, then choose photos of that person</string>
-    <string name="face_train_next">Next</string>
-    <string name="face_train_cancel">Cancel</string>
-
-    <string name="face_train_delete_title">Delete name?</string>
-    <string name="face_train_delete_message">Delete \"%1$s\" and all of its photos?</string>
-    <string name="face_train_yes">Yes</string>
-    <string name="face_train_no">No</string>
-
-    <string name="face_train_progress_title">Training</string>
-    <string name="face_train_progress_photo">Photo %1$d of %2$d</string>
-    <string name="face_train_success">Trained successfully</string>
-    <string name="face_train_no_face">No face found in the selected photos</string>
-    <string name="face_train_error">Training failed: %1$s</string>
-    <string name="face_train_no_photos">No photos selected</string>
-
+    <string formatted="false" name="face_train_progress_title">Training</string>
+    <string formatted="false" name="face_train_progress_photo">Photo %1$d of %2$d</string>
+    <string formatted="false" name="face_train_success">Trained successfully</string>
+    <string formatted="false" name="face_train_no_face">No face found in the selected photos</string>
+    <string formatted="false" name="face_train_error">Training failed: %1$s</string>
+    <string formatted="false" name="face_train_no_photos">No photos selected</string>
+    <string formatted="false" name="face_train_not_available">Face recognition could not start</string>
+    <string formatted="false" name="face_train_name_missing">That name is no longer in the list</string>
 
 </resources>

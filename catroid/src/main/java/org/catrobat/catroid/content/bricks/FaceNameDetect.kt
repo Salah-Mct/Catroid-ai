@@ -40,7 +40,7 @@ import org.catrobat.catroid.content.bricks.Brick.ResourcesSet
  */
 class FaceNameDetect : BrickBaseType() {
 
-    override fun getViewResource(): Int = R.layout.brick_face_name
+    override fun getViewResource(): Int = R.layout.brick_face_name_detect
 
     override fun addRequiredResources(requiredResourcesSet: ResourcesSet) {
         requiredResourcesSet.add(FACE_NAME_DETECTION)
