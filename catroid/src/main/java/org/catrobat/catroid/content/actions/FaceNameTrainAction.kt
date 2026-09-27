@@ -193,7 +193,14 @@ class FaceNameTrainAction : Action() {
         show(if (trainingInProgress) DialogType.FACE_TRAIN_PROGRESS else DialogType.FACE_TRAIN_MENU)
     }
 
-    /** Asks BrickDialogManager for a dialog, the same way AskAction does. */
+    /**
+     * Asks BrickDialogManager for a dialog through SHOW_DIALOG, like AskAction.
+     *
+     * On the main thread (a dialog button, the picker result, the end of
+     * training) the message is handled at once, so the next dialog is open
+     * before the current one closes and the stage never shows through
+     * undimmed in between. From other threads it is posted as usual.
+     */
     private fun show(type: DialogType, content: String = "") {
         val handler = StageActivity.messageHandler
         if (handler == null) {
@@ -201,7 +208,12 @@ class FaceNameTrainAction : Action() {
             finished = true
             return
         }
-        handler.obtainMessage(StageActivity.SHOW_DIALOG, arrayListOf(type, this, content)).sendToTarget()
+        val message = handler.obtainMessage(StageActivity.SHOW_DIALOG, arrayListOf(type, this, content))
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            handler.dispatchMessage(message)
+        } else {
+            message.sendToTarget()
+        }
     }
 
     private fun initRecognizer(): Boolean {
@@ -438,27 +450,30 @@ class FaceNameTrainAction : Action() {
         }
     }
 
-    /** Main thread. Closes the progress dialog and returns to the name list. */
+    /**
+     * Main thread. Returns to the name list: the list opens first and the
+     * progress dialog closes afterwards, so there is no gap between them.
+     */
     private fun finishTraining(outcome: Outcome) {
         trainingInProgress = false
         val dialog = progressDialog
         progressDialog = null
         progressBar = null
         progressShownAt = 0L
-        try {
-            dialog?.dismiss()
-        } catch (t: Throwable) {
-            Log.w(TAG, "Progress dialog already gone")
-        }
 
         // The brick that is running now; after a stage restart that is a new action.
         val owner = currentInstance ?: this
         if (owner.stageActivity() == null) {
             pendingOutcome = outcome
-            return
+        } else {
+            owner.showOutcome(outcome)
+            owner.show(DialogType.FACE_TRAIN_MENU)
         }
-        owner.showOutcome(outcome)
-        owner.show(DialogType.FACE_TRAIN_MENU)
+        try {
+            dialog?.dismiss()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Progress dialog already gone")
+        }
     }
 
     override fun restart() {

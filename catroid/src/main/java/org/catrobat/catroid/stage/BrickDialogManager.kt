@@ -76,7 +76,6 @@ class BrickDialogManager(val stageActivity: StageActivity) :
 
     fun dismissAllDialogs() {
         closingStage = true
-        faceTrainNextStep = null
         openDialogs.toList().forEach { it.dismiss() }
         openDialogs.clear()
     }
@@ -99,7 +98,12 @@ class BrickDialogManager(val stageActivity: StageActivity) :
     }
 
     private fun openDialog(dialog: Dialog) {
-        StageLifeCycleController.stagePause(stageActivity)
+        // Already paused while another dialog is open (e.g. the next face
+        // training step opens before the previous one closes). Pausing again
+        // would restart the timer's pause interval.
+        if (!stageActivity.dialogIsShowing()) {
+            StageLifeCycleController.stagePause(stageActivity)
+        }
         openDialogs.add(dialog)
         dialog.show()
     }
@@ -190,17 +194,12 @@ class BrickDialogManager(val stageActivity: StageActivity) :
 
     // ---------------- Face name train ----------------
 
-    /**
-     * The next step of the face training brick, run in [onDismiss] after the
-     * stage has been resumed. Running it from the click listener instead would
-     * open the next dialog, or the photo picker, before the old dialog's dismiss
-     * resumes the stage. Only one face training dialog is open at a time.
+    /*
+     * The face training listeners call the action straight away. The action opens
+     * its next dialog synchronously (on the main thread), before AlertDialog
+     * dismisses the current one, so the stage stays paused and dimmed without a
+     * gap between the dialogs.
      */
-    private var faceTrainNextStep: (() -> Unit)? = null
-
-    private fun thenOnDismiss(step: () -> Unit) {
-        faceTrainNextStep = step
-    }
 
     /**
      * The face training dialogs are built like Catroid's in-app dialogs: an
@@ -226,19 +225,19 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         val names = action.personNames()
         val builder = faceTrainBuilder(stageActivity.getString(R.string.face_train_title))
             .setPositiveButton(stageActivity.getString(R.string.face_train_add_new_name)) { _, _ ->
-                thenOnDismiss { action.onAddNameChosen() }
+                action.onAddNameChosen()
             }
             .setNegativeButton(stageActivity.getString(R.string.done)) { _, _ ->
-                thenOnDismiss { action.onDone() }
+                action.onDone()
             }
         if (names.isEmpty()) {
             builder.setMessage(stageActivity.getString(R.string.face_train_no_names))
         } else {
             builder.setItems(names.toTypedArray()) { _, which ->
-                thenOnDismiss { action.onPersonChosen(which) }
+                action.onPersonChosen(which)
             }
             builder.setNeutralButton(stageActivity.getString(R.string.face_train_delete)) { _, _ ->
-                thenOnDismiss { action.onDeleteChosen() }
+                action.onDeleteChosen()
             }
         }
         return builder.create()
@@ -256,12 +255,12 @@ class BrickDialogManager(val stageActivity: StageActivity) :
             .setTextWatcher(InputWatcher.TextWatcher().apply { setScope(action.personNames()) })
             .setPositiveButton(
                 stageActivity.getString(R.string.next),
-                TextInputDialog.OnClickListener { _, name -> thenOnDismiss { action.onNewName(name.trim()) } }
+                TextInputDialog.OnClickListener { _, name -> action.onNewName(name.trim()) }
             )
         builder.setTitle(stageActivity.getString(R.string.face_train_add_new_name))
             .setMessage(stageActivity.getString(R.string.face_train_name_subtitle))
             .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
-                thenOnDismiss { action.onNewNameCancelled() }
+                action.onNewNameCancelled()
             }
             .setCancelable(false)
             .setOnKeyListener(this)
@@ -272,10 +271,10 @@ class BrickDialogManager(val stageActivity: StageActivity) :
     private fun createFaceTrainDeleteChoiceDialog(action: FaceNameTrainAction): Dialog =
         faceTrainBuilder(stageActivity.getString(R.string.face_train_delete_choose_title))
             .setItems(action.personNames().toTypedArray()) { _, which ->
-                thenOnDismiss { action.onDeleteTargetChosen(which) }
+                action.onDeleteTargetChosen(which)
             }
             .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
-                thenOnDismiss { action.onDeleteCancelled() }
+                action.onDeleteCancelled()
             }
             .create()
 
@@ -285,10 +284,10 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         return faceTrainBuilder(stageActivity.getString(R.string.face_train_delete_title, name))
             .setMessage(stageActivity.getString(R.string.dialog_confirm_delete))
             .setPositiveButton(stageActivity.getString(R.string.delete)) { _, _ ->
-                thenOnDismiss { action.onDeleteConfirmed(index) }
+                action.onDeleteConfirmed(index)
             }
             .setNegativeButton(stageActivity.getString(R.string.cancel)) { _, _ ->
-                thenOnDismiss { action.onDeleteCancelled() }
+                action.onDeleteCancelled()
             }
             .create()
     }
@@ -320,12 +319,8 @@ class BrickDialogManager(val stageActivity: StageActivity) :
         // Dismissed because the stage is closing: its listener may already be
         // gone, so resuming it (or opening the next step) would crash.
         if (closingStage || stageActivity.isFinishing || stageActivity.isDestroyed) {
-            faceTrainNextStep = null
             return
         }
         StageLifeCycleController.stageResume(stageActivity)
-        val step = faceTrainNextStep
-        faceTrainNextStep = null
-        step?.invoke()
     }
 }
