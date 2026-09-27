@@ -67,4 +67,18 @@ class FaceNameTrainActionStateTest {
         second.act(0f)
         assertSame(second, FaceNameTrainAction.currentInstance)
     }
+
+    /**
+     * The brick holds the script only while its dialogs can be shown. With no
+     * stage (no StageActivity, no message handler) it must finish instead of
+     * blocking the script forever. Holding until Done is checked on the real
+     * stage in FaceTrainingUiTest.
+     */
+    @Test
+    fun withoutAStageTheBrickDoesNotBlockTheScript() {
+        val action = FaceNameTrainAction()
+
+        assertTrue(action.act(0f))
+        assertTrue(action.act(0f))
+    }
 }

@@ -30,12 +30,13 @@ import org.catrobat.catroid.content.bricks.Brick.FACE_NAME_DETECTION
 import org.catrobat.catroid.content.bricks.Brick.ResourcesSet
 
 /**
- * Built exactly like FaceNameTrain, because that brick already runs in the right
- * order: Ask holds the sequence until it is answered, then the next action runs.
+ * Face name detection. FaceNameDetectAction holds the script until the capture
+ * has reported a name, or Unknown, or timed out, and writes the result into the
+ * face name detection sensor.
  *
- * The only addition is addRequiredResources. Declaring FACE_NAME_DETECTION is
- * what makes Catroid ask for the camera permission before the stage starts,
- * through the mapping already present in BrickResourcesToRuntimePermissions.
+ * Declaring FACE_NAME_DETECTION is what makes Catroid ask for the camera
+ * permission before the stage starts, through the mapping already present in
+ * BrickResourcesToRuntimePermissions.
  */
 class FaceNameDetect : BrickBaseType() {
 
