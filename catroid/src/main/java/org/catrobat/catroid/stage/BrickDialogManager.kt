@@ -223,7 +223,9 @@ class BrickDialogManager(val stageActivity: StageActivity) :
 
     private fun createFaceTrainMenuDialog(action: FaceNameTrainAction): Dialog {
         val names = action.personNames()
-        val builder = faceTrainBuilder(stageActivity.getString(R.string.face_train_title))
+        // A list leaves no room for a message, so the title says what tapping a name does.
+        val title = if (names.isEmpty()) R.string.face_train_title else R.string.face_train_choose_name
+        val builder = faceTrainBuilder(stageActivity.getString(title))
             .setPositiveButton(stageActivity.getString(R.string.face_train_add_new_name)) { _, _ ->
                 action.onAddNameChosen()
             }
@@ -292,7 +294,6 @@ class BrickDialogManager(val stageActivity: StageActivity) :
             .create()
     }
 
-    /** No buttons: the action closes it when training has finished. */
     /** No buttons: the action closes it when training has finished. */
     private fun createFaceTrainProgressDialog(action: FaceNameTrainAction): Dialog {
         val context = faceTrainContext()

@@ -18,6 +18,7 @@ import androidx.test.espresso.action.ViewActions.clearText
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.typeText
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intended
@@ -128,6 +129,21 @@ class FaceTrainingUiTest {
         onView(withText(text(R.string.face_train_no_names))).inRoot(isDialog()).check(matches(isDisplayed()))
         onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).check(matches(isDisplayed()))
         onView(withText(text(R.string.done))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_choose_name))).check(doesNotExist())
+    }
+
+    /** With names in the list, the title tells the user what tapping a name does. */
+    @Test
+    fun menuWithNamesSaysThatTappingANameAddsPhotos() {
+        recognizer().addPerson("Person A")
+        recognizer().addPerson("Person B")
+        startStage()
+
+        onView(withText(text(R.string.face_train_choose_name))).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText("Person A")).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText("Person B")).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_title))).check(doesNotExist())
+        onView(withText(text(R.string.face_train_no_names))).check(doesNotExist())
     }
 
     /**
@@ -285,6 +301,7 @@ class FaceTrainingUiTest {
         assertTrue("Selected image produced no saved embeddings", recognizer().getPhotoCount(0) > 0)
         assertEquals(listOf(1, 1), FaceNameTrainAction.getProgressForTest().toList())
         onView(withText("Person A")).inRoot(isDialog()).check(matches(isDisplayed()))
+        onView(withText(text(R.string.face_train_choose_name))).inRoot(isDialog()).check(matches(isDisplayed()))
         assertUserVariableNotEqualsForTimeMs(afterTraining, 1.0, HOLD_CHECK_MS)
     }
 
@@ -427,7 +444,10 @@ class FaceTrainingUiTest {
         }
     }
 
-    private fun menuTitle() = onView(withText(text(R.string.face_train_title))).inRoot(isDialog())
+    /** The name list's title: a hint once names exist, "Face names" while it is empty. */
+    private fun menuTitle() = onView(
+        withText(text(if (recognizer().classNames.isEmpty()) R.string.face_train_title else R.string.face_train_choose_name))
+    ).inRoot(isDialog())
 
     private fun openNewNameDialog() {
         onView(withText(text(R.string.face_train_add_new_name))).inRoot(isDialog()).perform(click())
